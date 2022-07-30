@@ -1,21 +1,24 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify, make_response
 import os
 import json
-import requests
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import create_engine
-from sqlalchemy_utils import database_exists, create_database
+import uuid
+from werkzeug.security import generate_password_hash, check_password_hash
 import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import smtplib
-import getpass
+import requests
+import jwt
+import datetime
+from functools import wraps
+from flask_sqlalchemy import SQLAlchemy
 
 
 
 app = Flask(__name__)
 file_path = os.path.abspath(os.getcwd())+"\emaildatabase.db"
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///'+file_path
+app.config['SECRET_KEY']='happyme'
 db = SQLAlchemy(app)
 
 class user(db.Model):
@@ -33,7 +36,22 @@ class alert(db.Model):
     a_status = db.Column(db.String(80), nullable = False)
 
     def __repr__(self):
-        return f"{self.a_id} - {self.u_id} - {self.a_target} - {self.a_status}"        
+        return f"{self.a_id} - {self.u_id} - {self.a_target} - {self.a_status}"
+
+def token_required(f):
+    @wraps(f)
+    def decorated(args, **kwargs):
+        if 'access_token' in request.headers:
+            token = request.headers['access_token']
+        if not token:
+            return jsonify({'Response':'Token is missing'})
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'])
+            current_user = user.query.filter_by(u_id=data['uid']).first()
+        except:
+            return jsonify({'Response':'Invalid Token'})
+
+        return f(current_user,args, **kwargs)        
 
 @app.route('/')
 def indef():
@@ -43,14 +61,16 @@ def indef():
             return str(coins["current_price"])
 
 @app.route('/alerts/create', methods=['POST'])
-def add_alert():
+@token_required
+def add_alert(current_user):
     a = alert(u_id=request.json["u_id"],a_target=request.json["a_target"],a_status="created")
     db.session.add(a)
     db.session.commit()
     return {"aid":a.a_id}
 
 @app.route('/alerts/delete', methods=['PUT'])
-def remove_alert():
+@token_required
+def remove_alert(current_user):
     r_aid=request.json["a_id"]
     row = alert.query.filter_by(aid=r_aid).first()
     row.astatus = "deleted"
@@ -58,7 +78,8 @@ def remove_alert():
     return "Deleted Successfully"
 
 @app.route('/alerts',methods=['GET'])
-def view_alerts():
+@token_required
+def view_alerts(current_user):
     qf=request.json["queryfilter"]
     if qf=='null':
         alerts = alert.query.filter_by(uid=request.json["u_id"]).all()
@@ -68,6 +89,30 @@ def view_alerts():
     for a in alerts:
         response.append({'a_id':a.a_id, 'u_id':a.u_id, 'a_target':a.a_target, 'a_status':a.a_status})
     return {'Alerts':response}
+
+@app.route('/user',methods=['POST'])
+@token_required
+def create_user():
+    hashed_usecret = generate_password_hash(request.json["password"], method='sha256')
+    db.session.add(user(usersecret=hashed_usecret, username=request.json["username"], useremail=request.json["email"]))
+    db.session.commit()
+    return {"Response":"New user created"}
+
+@app.route('/login')
+@token_required
+def user_login():
+    auth = request.authorization
+    if not auth or not auth.username or not auth.password:
+        return make_response("Please enter username and password", 401, {"WWW-Authenticate":"Basic Realm='Login Failed'"})
+    user_row = user.query.filter_by(username=auth.username).first()
+    if not user_row:
+        return make_response("Wrong username or password", 401, {"WWW-Authenticate":"Basic Realm='Login Failed'"})
+    if check_password_hash(user_row.usersecret, auth.password):
+        token = jwt.encode({'uid':user.u_id, 'exp':datetime.datetime.utcnow() + datetime.timedelta(minutes=60)}, app.config['SECRET_KEY'])
+        return jsonify({'token':token.decode(  'UTF-8')})
+
+    return make_response("Wrong username or password", 401, {"WWW-Authenticate":"Basic Realm='Login Failed'"})
+
 
 def send_email(send_email_to,your_name):
     msg = MIMEMultipart()
@@ -94,7 +139,8 @@ your_password="florensic.api"
 send_email_to="sandhya.s2019@vitstudent.ac.in"
 alert_amount="23400"
 bitcoin_rate=24504
-while True:
+def theInfiniteLoop():
+  while True:
     url= "https://api.coindesk.com/v1/bpi/currentprice.json"
     response1 = requests.get(
         url,headers={"Accept":"application/json"},)
