@@ -30,3 +30,5 @@ FILTER:
 parameters: a_id - alert id
 /alerts - GET Requests
 
+WEB APP IS ALSO CONFIGURED FOR DOCKERIZATION
+
