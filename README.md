@@ -2,9 +2,11 @@
 
 Crypto Price Alert Web Application's Core Backend, developed as a recruitment task for Krypto
 Tech Stack:
+
 BACKEND: PYTHON -FLASK FOR WEB APPLICATION FRAMEWORK
 DATABASE: SQLITE
 Object Relational Mapper: SQLALCHEMY
+
 API TESTING: POSTMAN
 2 MODES:
 CONFIG MODE - DEFAULT {CREATE ALERT,DELETE ALERT, FETCH ALERT BY FILTER}
